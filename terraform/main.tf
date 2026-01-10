@@ -1,9 +1,10 @@
 locals {
   cp_instances = [for i in range(var.cluster_size.controlplanes) : format("%s-cp-%s", var.cluster_name, i + 1)]
+  worker_instances = [for i in range(var.cluster_size.workers) : format("%s-worker-%s", var.cluster_name, i + 1)]
 }
 
-resource "libvirt_volume" "cp" {
-  for_each = toset(local.cp_instances)
+resource "libvirt_volume" "root_disk" {
+  for_each = toset(concat(local.cp_instances, local.worker_instances))
 
   name = each.value
   size = 6442450944
@@ -29,7 +30,7 @@ resource "libvirt_domain" "cp" {
     file = var.iso_path
   }
   disk {
-    volume_id = libvirt_volume.cp[each.key].id
+    volume_id = libvirt_volume.root_disk[each.key].id
   }
   boot_device {
     dev = ["cdrom"]
@@ -39,7 +40,40 @@ resource "libvirt_domain" "cp" {
     wait_for_lease = true
   }
   vcpu   = "2"
-  memory = "4096"
+  memory = "2048"
+}
+
+resource "libvirt_domain" "worker" {
+  for_each = toset(local.worker_instances)
+
+  lifecycle {
+    ignore_changes = [
+      nvram,
+    ]
+  }
+  name     = each.value
+  console {
+    type        = "pty"
+    target_port = "0"
+  }
+  cpu {
+    mode = "host-passthrough"
+  }
+  disk {
+    file = var.iso_path
+  }
+  disk {
+    volume_id = libvirt_volume.root_disk[each.key].id
+  }
+  boot_device {
+    dev = ["cdrom"]
+  }
+  network_interface {
+    network_name   = "default"
+    wait_for_lease = true
+  }
+  vcpu   = "2"
+  memory = "1024"
 }
 
 resource "talos_machine_secrets" "this" {}
@@ -48,6 +82,17 @@ data "talos_machine_configuration" "controlplane" {
   cluster_name       = var.cluster_name
   cluster_endpoint   = format("https://%s:6443", values(libvirt_domain.cp)[0].network_interface[0].addresses[0])
   machine_type       = "controlplane"
+  machine_secrets    = talos_machine_secrets.this.machine_secrets
+  kubernetes_version = "1.35.0"
+  config_patches     = [
+    file("${path.module}/files/customization.yaml")
+  ]
+}
+
+data "talos_machine_configuration" "worker" {
+  cluster_name       = var.cluster_name
+  cluster_endpoint   = format("https://%s:6443", values(libvirt_domain.cp)[0].network_interface[0].addresses[0])
+  machine_type       = "worker"
   machine_secrets    = talos_machine_secrets.this.machine_secrets
   kubernetes_version = "1.35.0"
   config_patches     = [
@@ -67,6 +112,14 @@ resource "talos_machine_configuration_apply" "controlplane" {
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
   node                        = libvirt_domain.cp[each.key].network_interface[0].addresses[0]
+}
+
+resource "talos_machine_configuration_apply" "worker" {
+  for_each = toset(local.worker_instances)
+
+  client_configuration        = talos_machine_secrets.this.client_configuration
+  machine_configuration_input = data.talos_machine_configuration.worker.machine_configuration
+  node                        = libvirt_domain.worker[each.key].network_interface[0].addresses[0]
 }
 
 resource "talos_machine_bootstrap" "this" {
