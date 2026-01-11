@@ -58,6 +58,7 @@ jobs:
 
       - name: Generate Kubernetes config
         run: |
+          mv ../terraform.tfstate ./
           terraform output -raw kubeconfig > .kubeconfig
           echo "KUBECONFIG=$PWD/.kubeconfig" >> $GITHUB_ENV
 
