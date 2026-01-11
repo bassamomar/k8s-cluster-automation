@@ -1,0 +1,98 @@
+name: Deploy Application
+
+on:
+  push:
+    paths:
+      - 'kubernetes/*.yaml'
+  workflow_dispatch:
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: self-hosted
+    steps:
+      - name: Ensure unzip is installed
+        run: |
+          if ! command -v unzip >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y unzip
+          fi
+
+  kubernetes:
+    name: Kubernetes Deployment
+    needs: setup
+    runs-on: self-hosted
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Download Encrypted Terraform State file
+        uses: badgerhobbs/terraform-state@v2
+        with:
+          encryption_key: ${{ secrets.ENCRYPTION_KEY }}
+          operation: download
+          location: artifact
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Generate Kubernetes config
+        run: |
+          {
+            echo 'KUBE_CONFIG<<EOF'
+            terraform output -raw kubeconfig | base64
+            echo EOF
+          } >> $GITHUB_ENV
+
+      - name: Deploy Application
+        uses: actions-hub/kubectl@master
+        env:
+          KUBE_CONFIG: ${{ env.KUBE_CONFIG }}
+        with:
+          args: apply -f ../kubernetes/petclinic.yaml
+
+      - name: Wait for Application
+        uses: actions-hub/kubectl@master
+        env:
+          KUBE_CONFIG: ${{ env.KUBE_CONFIG }}
+        with:
+          args: wait --for=condition=Available deployment/petclinic --timeout=300s
+
+      - name: Get Application Port
+        uses: actions-hub/kubectl@master
+        env:
+          KUBE_CONFIG: ${{ env.KUBE_CONFIG }}
+        with:
+          redirect-to: WEBAPP_PORT
+          args: get svc petclinic -o jsonpath='{.spec.ports[0].nodePort}'
+
+      - name: Get Kubernetes Node IP
+        uses: actions-hub/kubectl@master
+        env:
+          KUBE_CONFIG: ${{ env.KUBE_CONFIG }}
+        with:
+          redirect-to: WEBAPP_IP
+          args: get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}'
+
+      - name: Display Application Link
+        run: |
+          echo "Access the application using the below link(s):"
+          while read -r ip; do
+            echo "http://${ip}:${WEBAPP_PORT}"
+          done <<< "$WEBAPP_IP"
+
