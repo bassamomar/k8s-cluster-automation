@@ -50,5 +50,24 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      - name: Download Encrypted Terraform State file
+        uses: badgerhobbs/terraform-state@v2
+        with:
+          encryption_key: ${{ secrets.ENCRYPTION_KEY }}
+          operation: download
+          location: artifact
+          directory: ./terraform
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
       - name: Terraform Apply
         run: terraform apply -auto-approve -var="cluster_name=${{ inputs.cluster_name }}" -var="iso_path=${{ inputs.iso_path }}"
+
+      - name: Encrypt and Upload Terraform State file
+        uses: badgerhobbs/terraform-state@v2
+        with:
+          encryption_key: ${{ secrets.ENCRYPTION_KEY }}
+          operation: upload
+          location: artifact
+          directory: ./terraform
+          github_token: ${{ secrets.GITHUB_TOKEN }}
