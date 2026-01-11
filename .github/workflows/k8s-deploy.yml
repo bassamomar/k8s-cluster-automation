@@ -4,14 +4,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  terraform:
-    name: Terraform Init & Apply
+  setup:
+    name: Setup
     runs-on: self-hosted
-
-    defaults:
-      run:
-        working-directory: terraform
-
     steps:
       - name: Ensure unzip is installed
         run: |
@@ -20,10 +15,20 @@ jobs:
             sudo apt-get install -y unzip
           fi
 
+  terraform:
+    name: Terraform Init & Apply
+    needs: setup
+    runs-on: self-hosted
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup node
+      - name: Install node
         uses: actions/setup-node@v6
         with:
           node-version: 20
