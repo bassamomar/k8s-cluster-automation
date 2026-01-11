@@ -33,7 +33,7 @@ resource "libvirt_domain" "cp" {
     volume_id = libvirt_volume.root_disk[each.key].id
   }
   boot_device {
-    dev = ["cdrom"]
+    dev = ["hd", "cdrom"]
   }
   network_interface {
     network_name   = "default"
@@ -66,7 +66,7 @@ resource "libvirt_domain" "worker" {
     volume_id = libvirt_volume.root_disk[each.key].id
   }
   boot_device {
-    dev = ["cdrom"]
+    dev = ["hd", "cdrom"]
   }
   network_interface {
     network_name   = "default"
