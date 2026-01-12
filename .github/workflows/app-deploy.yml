@@ -53,12 +53,12 @@ jobs:
           encryption_key: ${{ secrets.ENCRYPTION_KEY }}
           operation: download
           location: artifact
+          directory: ./terraform
           github_token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
       - name: Generate Kubernetes config
         run: |
-          mv ../terraform.tfstate ./
           terraform output -raw kubeconfig > .kubeconfig
           echo "KUBECONFIG=$PWD/.kubeconfig" >> $GITHUB_ENV
 
