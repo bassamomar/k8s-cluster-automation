@@ -219,4 +219,25 @@ while read -r ip; do
 done <<< "$WEBAPP_IP"
 ```
 
+### Kubernets Security Monitoring
+
+There are different layers to consider when monitoring the security of a Kubernetes cluster:
+
+- Container and image scanning tools
+- Policy and admission control tools
+- Runtime security and intrusion detection tools
+- Configuration and benchmark testing tools
+- Software supply chain security tools
+
+In this repository, the kube-bench tool was chosen because it provides a straightforward CLI tool for checking Kubernetes clusters against CIS benchmarks. It's the gold standard for CIS compliance testing, focusing specifically on cluster-level security configurations, such as API server settings and node hardening. To run a benchmark, follow the steps below:
+
+```bash
+kubectl apply -f monitoring/kube-bench.yaml
+# Wait for the job to complete
+kubectl -n privileged-namespace wait --for=condition=complete job/kube-bench
+# The results are held in the pod's logs
+kubectl -n privileged-namespace logs jobs/kube-bench
+```
+
+
 
