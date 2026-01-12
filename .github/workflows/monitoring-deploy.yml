@@ -1,0 +1,81 @@
+name: Deploy Monitoring Tools
+
+on:
+  push:
+    paths:
+      - 'monitoring/*.yaml'
+  workflow_dispatch:
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: self-hosted
+    steps:
+      - name: Install pre-requisites
+        run: |
+          if ! command -v unzip >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y unzip
+          fi
+          if ! command -v kubectl >/dev/null 2>&1; then
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          fi
+
+
+  kubernetes:
+    name: Monitoring Deployment
+    needs: setup
+    runs-on: self-hosted
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Download Encrypted Terraform State file
+        uses: badgerhobbs/terraform-state@v2
+        with:
+          encryption_key: ${{ secrets.ENCRYPTION_KEY }}
+          operation: download
+          location: artifact
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Generate Kubernetes config
+        run: |
+          mv ../terraform.tfstate ./
+          terraform output -raw kubeconfig > .kubeconfig
+          echo "KUBECONFIG=$PWD/.kubeconfig" >> $GITHUB_ENV
+
+      - name: Install Kubernetes Metrics Server
+        run: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+      - name: Deploy Monitoring
+        run: |
+          kubectl apply -f ../monitoring/skooner.yaml
+          kubectl -n kube-system wait --for=condition=Available deployment/skooner --timeout=300s
+
+      - name: Display Monitoring Application Link
+        run: |
+          WEBAPP_PORT=$(kubectl -n kube-system get svc skooner -o jsonpath='{.spec.ports[0].nodePort}')
+          WEBAPP_IP="$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}')"
+          echo "Access the monitoring tool using the below link(s):"
+          while read -r ip; do
+            echo "http://${ip}:${WEBAPP_PORT}"
+          done <<< "$WEBAPP_IP"
+
