@@ -62,6 +62,10 @@ jobs:
           terraform output -raw kubeconfig > .kubeconfig
           echo "KUBECONFIG=$PWD/.kubeconfig" >> $GITHUB_ENV
 
+      - name: Deploy Security Monitoring
+        run: |
+          kubectl apply -f ../monitoring/kube-bench.yaml
+
       - name: Install Kubernetes Metrics Server
         run: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
